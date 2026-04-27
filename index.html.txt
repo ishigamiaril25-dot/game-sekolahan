@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Simulator Kepala Sekolah</title>
+
+<style>
+body{
+  margin:0;
+  background:#111;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  overflow:hidden;
+}
+canvas{
+  border:4px solid #4caf50;
+  image-rendering:pixelated;
+  background:#000;
+}
+
+/* ===== HUD ===== */
+#hud{
+  position:fixed;
+  top:10px;
+  left:10px;
+  width:220px;
+  background:rgba(0,0,0,0.8);
+  color:white;
+  padding:10px;
+  font-family:monospace;
+  z-index:10;
+}
+
+/* ===== TUTORIAL ===== */
+#tutorial{
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  background:rgba(0,0,0,0.85);
+  color:white;
+  padding:20px 30px;
+  border:3px solid #4caf50;
+  font-family:monospace;
+  text-align:center;
+  z-index:50;
+}
+
+.stat{margin-bottom:10px;}
+.bar{
+  width:100%;
+  height:12px;
+  background:#333;
+  border:1px solid #555;
+  image-rendering:pixelated;
+}
+.bar div{
+  height:100%;
+  transition: width 0.3s ease;
+}
+
+
+#envBar{background:#4caf50;}
+#moneyBar{background:#ffc107;}
+#happyBar{background:#03a9f4;}
+
+/* ===== DIALOG ===== */
+#dialog{
+  border:3px solid #4caf50;
+  box-shadow:0 0 0 3px #111;
+  position:fixed;
+  bottom:20px;
+  width:640px;
+  background:#222;
+  color:white;
+  padding:10px;
+  display:none;
+  z-index:20; 
+}
+
+#choices{
+  margin-top:10px;
+  display:none;  
+}
+button{
+  margin:5px;
+  padding:6px 10px;
+  cursor:pointer;       
+  background:#333;       
+  color:white;          
+  border:1px solid #555; 
+}
+button:hover{
+  background:#4caf50;
+}
+
+</style>
+</head>
+
+<body>
+
+<canvas id="game" width="640" height="480"></canvas>
+
+<!-- TUTORIAL -->
+<div id="tutorial">
+  <h3>🎮 Cara Bermain</h3>
+  <p>Gerak: <b>W A S D</b></p>
+  <p>Interaksi: <b>E</b></p>
+</div>
+
+<!-- OPENING -->
+<div id="opening" style="
+  position:fixed;
+  inset:0;
+  background:#000;
+  color:white;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  font-family:monospace;
+  z-index:200;
+  text-align:center;
+">
+  <h1> Simulator Kepala Sekolah</h1>
+  <p>
+    Anda adalah kepala sekolah.<br>
+    Ambil keputusan terbaik demi masa depan sekolah.
+  </p>
+  <button onclick="startGame()">▶ Mulai Game</button>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+<div class="stat">📅 Hari: <span id="dayText">1</span></div>
+
+  <div class="stat">🌱 Lingkungan
+    <div class="bar"><div id="envBar"></div></div>
+  </div>
+  <div class="stat">💰 Dana
+    <div class="bar"><div id="moneyBar"></div></div>
+  </div>
+  <div class="stat">😊 Kebahagiaan
+    <div class="bar"><div id="happyBar"></div></div>
+  </div>
+</div>
+
+<!-- DIALOG -->
+<div id="dialog">
+  <div id="dialogText"></div>
+
+ <small id="hint" style="opacity:0.7; display:block; margin-top:5px;">
+    Tekan E untuk interaksi
+  </small>
+
+  <div id="choices">
+    <button onclick="choose(1)"></button>
+    <button onclick="choose(2)"></button>
+    <button onclick="choose(3)"></button>
+  </div>
+
+<div id="feedback" style="
+  margin-top:8px;
+  color:#aaffaa;
+  font-size:14px;
+  display:none;
+ "></div>
+ </div>
+
+<!-- ENDING -->
+<div id="ending" style="
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.9);
+  color:white;
+  display:none;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  font-family:monospace;
+  z-index:99;">
+  <div>
+    <h1 id="endingTitle"></h1>
+    <p id="endingText"></p>
+    <p>
+      🌱 <span id="endEnv"></span> |
+      💰 <span id="endMoney"></span> |
+      😊 <span id="endHappy"></span>
+    </p>
+    <button onclick="location.reload()">Main Ulang</button>
+  </div>
+</div>
+
+<!-- PAUSE MENU -->
+<div id="pauseMenu" style="
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.8);
+  color:white;
+  display:none;
+  justify-content:center;
+  align-items:center;
+  text-align:center;
+  font-family:monospace;
+  z-index:150;
+">
+  <div>
+    <h2>⏸ Game Dijeda</h2>
+    <button onclick="resumeGame()">▶ Lanjut</button><br>
+    <button onclick="location.reload()">🔁 Ulang</button>
+  </div>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+const TILE=32;
+
+/* ===== PLAYER ===== */
+const player={
+  x:8,
+  y:8,
+  speed:0.12,
+  frame:1,
+  dir:0,
+  tick:0
+};
+
+const camera={x:0,y:0};
+
+
+/* ===== STATUS ===== */
+let env=50,money=50,happy=50;
+let day = 1;
+
+
+/* ===== NPC ===== */
+
+const npcImgGuru = new Image();
+npcImgGuru.src = "assets/guru.png";
+
+const npcImgSiswa = new Image();
+npcImgSiswa.src = "assets/siswa.png";
+
+const npcImgSatpam = new Image();
+npcImgSatpam.src = "assets/satpam.png";
+
+const npcImgKantin = new Image();
+npcImgKantin.src = "assets/penjaga_kantin.png";
+
+const npcs = [
+  {
+    x: 6, y: 6,
+    img: npcImgGuru,
+    event: 0,
+    done: false
+  },
+  {
+    x: 10, y: 8,
+    img: npcImgSiswa,
+    event: 1,
+    done: false
+  },
+  {
+    x: 14, y: 10,
+    img: npcImgSatpam,
+    event: 2,
+    done: false
+  },
+  {
+    x: 8, y: 12,
+    img: npcImgKantin,
+    event: 3,
+    done: false
+  }
+];
+
+const saved = localStorage.getItem("kepalaSekolahSave");
+if(saved){
+  const data = JSON.parse(saved);
+
+  env = data.env;
+  money = data.money;
+  happy = data.happy;
+  day = data.day;
+
+  player.x = data.player.x;
+  player.y = data.player.y;
+
+  data.npcs.forEach((done,i)=>{
+    npcs[i].done = done;
+  });
+}
+
+let activeNPC=null;
+let canInteract=true;
+
+let gameStarted = false;
+let isPaused = false;
+
+// Tileset
+let assetsLoaded = 0;
+const totalAssets = 6;
+
+const tileset = new Image();
+tileset.src = "assets/tileset.png";
+
+// Player
+function assetReady(){
+  assetsLoaded++;
+}
+
+const playerImg = new Image();
+playerImg.src = "assets/player.png";
+
+[playerImg, tileset, npcImgGuru, npcImgSiswa, npcImgSatpam, npcImgKantin]
+.forEach(img => img.onload = assetReady);
+
+const bgm = new Audio("assets/bgm.mp3");
+bgm.loop = true;
+bgm.volume = 0.3;
+
+// Map
+
+
+const TILE_POS = {
+  0: {x:0,   y:0},    // rumput
+  1: {x:32,  y:0},    // tanah
+  2: {x:64,  y:0},    // jalan
+  3: {x:96,  y:0},    // air
+  4: {x:0,   y:32},   // pasir
+  5: {x:32,  y:32},   // batu
+  6: {x:64,  y:32},   // dinding sekolah
+  7: {x:96,  y:32},   // lantai sekolah
+  8: {x:128, y:32},   // atap sekolah
+
+};
+
+const WALKABLE_TILES = [0, 1, 2, 7];
+// rumput, tanah, jalan, lantai sekolah
+
+
+const map = [
+  // halaman depan
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,1,2,2,2,2,2,2,2,2,2,2,2,2,1,0],
+
+  // gedung sekolah
+  [0,1,6,6,6,6,6,6,6,6,6,6,6,6,1,0],
+  [0,1,6,7,7,7,7,7,7,7,7,7,7,6,1,0],
+  [0,1,6,7,7,7,7,7,7,7,7,7,7,6,1,0],
+  [0,1,6,6,6,6,6,6,6,6,6,6,6,6,1,0],
+
+  // halaman belakang
+  [0,1,2,2,2,2,2,2,2,2,2,2,2,2,1,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+];
+
+
+const MAP_ROWS = map.length;
+const MAP_COLS = map[0].length;
+
+let interactionToday = 0;
+/* ===== EVENTS ===== */
+const events = [
+  {
+    q: "Lingkungan sekolah kotor. Apa kebijakan Anda?",
+    a1: "Kerja bakti rutin",
+    a2: "Tambah petugas",
+    a3: "Abaikan",
+    e1: [10, -5, 5],
+    e2: [5, -10, 0],
+    e3: [-10, 0, -10]
+  },
+  {
+    q: "Siswa mengeluh kantin mahal.",
+    a1: "Subsidi sekolah",
+    a2: "Atur harga",
+    a3: "Biarkan pasar",
+    e1: [0, -10, 10],
+    e2: [5, 0, 5],
+    e3: [-5, 5, -5]
+  },
+  {
+    q: "Keamanan sekolah kurang.",
+    a1: "Tambah satpam",
+    a2: "Pasang CCTV",
+    a3: "Tidak perlu",
+    e1: [5, -10, 5],
+    e2: [5, -15, 5],
+    e3: [-10, 0, -10]
+  },
+  {
+    q: "Kantin kurang bersih.",
+    a1: "Inspeksi rutin",
+    a2: "Teguran",
+    a3: "Abaikan",
+    e1: [10, 0, 5],
+    e2: [5, 0, 0],
+    e3: [-10, 0, -5]
+  }
+];
+
+
+/* ===== INPUT ===== */
+const keys={};
+window.addEventListener("keydown", e => {
+  keys[e.key] = true;
+
+  if(e.key === "Escape" && gameStarted){
+    isPaused = !isPaused;
+
+    if(isPaused) saveGame();
+
+    document.getElementById("pauseMenu").style.display =
+      isPaused ? "flex" : "none";
+  }
+
+  if(e.key === "e" && activeNPC && canInteract){
+    canInteract = false;
+    const ev = events[activeNPC.event];
+
+    document.getElementById("dialog").style.display = "block";
+    document.getElementById("choices").style.display = "block";
+    document.getElementById("hint").style.display = "none";
+
+    document.getElementById("dialogText").innerText = ev.q;
+
+    const c = document.getElementById("choices").children;
+    c[0].innerText = ev.a1;
+    c[1].innerText = ev.a2;
+    c[2].innerText = ev.a3;
+  }
+});
+
+window.addEventListener("keyup",e=>keys[e.key]=false);
+
+const envBar = document.getElementById("envBar");
+const moneyBar = document.getElementById("moneyBar");
+const happyBar = document.getElementById("happyBar");
+
+/* ===== UPDATE BAR ===== */
+function showFeedback(ef){
+  const fb = document.getElementById("feedback");
+
+  let text = "";
+  if(ef[0] !== 0) text += `🌱 Lingkungan ${ef[0]>0?"+":""}${ef[0]}<br>`;
+  if(ef[1] !== 0) text += `💰 Dana ${ef[1]>0?"+":""}${ef[1]}<br>`;
+  if(ef[2] !== 0) text += `😊 Kebahagiaan ${ef[2]>0?"+":""}${ef[2]}`;
+
+  fb.innerHTML = text;
+  fb.style.display = "block";
+
+  setTimeout(()=>{
+    fb.style.display = "none";
+  }, 2000);
+}
+
+function updateBars(){
+  env=Math.max(0,Math.min(100,env));
+  money=Math.max(0,Math.min(100,money));
+  happy=Math.max(0,Math.min(100,happy));
+  envBar.style.width=env+"%";
+  moneyBar.style.width=money+"%";
+  happyBar.style.width=happy+"%";
+
+document.getElementById("dayText").innerText = day;
+
+}
+
+/* ===== CHOICE ===== */
+function choose(n){
+  const ev = events[activeNPC.event];
+  const ef = n === 1 ? ev.e1 : n === 2 ? ev.e2 : ev.e3;
+
+  env += ef[0];
+  money += ef[1];
+  happy += ef[2];
+
+  updateBars();
+  showFeedback(ef);
+
+  activeNPC.done = true;
+  activeNPC = null;
+  canInteract = true;
+  document.getElementById("dialog").style.display = "none";
+  document.getElementById("choices").style.display = "none";
+  document.getElementById("hint").style.display = "block";
+
+  day++;
+  saveGame();
+  checkEnding();
+}
+
+/* ===== CHECK NPC ===== */
+function checkNPC(){
+  activeNPC = null;
+  let near = false;
+
+  npcs.forEach(n=>{
+    if(n.done) return;
+    if(Math.abs(n.x-player.x)<=1 && Math.abs(n.y-player.y)<=1){
+      activeNPC = n;
+      near = true;
+    }
+  });
+
+  document.getElementById("hint").style.display =
+    near ? "block" : "none";
+}
+
+/* ===== COLLISION ===== */
+function canMove(x, y){
+  const corners = [
+    [x+0.2, y+0.2],
+    [x+0.8, y+0.2],
+    [x+0.2, y+0.8],
+    [x+0.8, y+0.8],
+  ];
+
+ for(const [cx, cy] of corners){
+  const tx = Math.floor(cx);
+  const ty = Math.floor(cy);
+
+  if(tx < 0 || ty < 0 || tx >= MAP_COLS || ty >= MAP_ROWS){
+    return false;
+  }
+
+ 
+  if(!WALKABLE_TILES.includes(map[ty][tx])){
+    return false;
+  }
+}
+
+
+for(const n of npcs){
+  if(!n.done){
+    if(Math.abs(n.x - x) < 0.7 && Math.abs(n.y - y) < 0.7){
+      return false;
+    }
+  }
+}
+
+  return true;
+}
+
+
+/* ===== ENDING ===== */
+function checkEnding(){
+  if(!npcs.every(n=>n.done)) return;
+  let t="❌ Gagal",x="Sekolah memburuk";
+  if(env>=70&&money>=70&&happy>=70){t="🏆 Teladan";x="Sekolah ideal";}
+else if(env>=40 && money>=40 && happy>=40){
+  t="⚖️ Cukup Baik";
+  x="Sekolah berjalan stabil";
+}
+ document.getElementById("endingTitle").innerText=t;
+  document.getElementById("endingText").innerText=x;
+  document.getElementById("endEnv").innerText=env;
+  document.getElementById("endMoney").innerText=money;
+  document.getElementById("endHappy").innerText=happy;
+  document.getElementById("ending").style.display="flex";
+}
+
+function startGame(){
+  document.getElementById("opening").style.display = "none";
+  document.getElementById("tutorial").style.display = "none"; 
+
+if(bgm.paused){
+  bgm.currentTime = 0;
+  bgm.play();
+}
+
+  gameStarted = true;
+}
+
+
+function resumeGame(){
+  isPaused = false;
+  document.getElementById("pauseMenu").style.display = "none";
+}
+
+
+/* ===== UPDATE PLAYER & KAMERA ===== */
+function update(){
+
+if(isPaused) return;
+if(document.getElementById("dialog").style.display === "block") return;
+
+  let moving = false;
+
+  let nextX = player.x;
+  let nextY = player.y;
+
+  if(keys["w"]||keys["ArrowUp"]){
+    nextY -= player.speed;
+    player.dir = 3;
+    moving = true;
+  }
+  if(keys["s"]||keys["ArrowDown"]){
+    nextY += player.speed;
+    player.dir = 0;
+    moving = true;
+  }
+  if(keys["a"]||keys["ArrowLeft"]){
+    nextX -= player.speed;
+    player.dir = 1;
+    moving = true;
+  }
+  if(keys["d"]||keys["ArrowRight"]){
+    nextX += player.speed;
+    player.dir = 2;
+    moving = true;
+  }
+
+  // 👉 COLLISION CHECK
+  if(canMove(nextX, nextY)){
+    player.x = nextX;
+    player.y = nextY;
+  }
+
+player.x = Math.max(0, Math.min(player.x, MAP_COLS - 1));
+player.y = Math.max(0, Math.min(player.y, MAP_ROWS - 1));
+
+  if(moving){
+    player.tick++;
+    if(player.tick % 10 === 0){
+      player.frame = (player.frame + 1) % 3;
+    }
+  }else{
+    player.frame = 1;
+  }
+
+  camera.x = Math.max(0,
+    Math.min(player.x*TILE - canvas.width/2, MAP_COLS*TILE - canvas.width)
+  );
+  camera.y = Math.max(0,
+    Math.min(player.y*TILE - canvas.height/2, MAP_ROWS*TILE - canvas.height)
+  );
+
+  checkNPC();
+}
+
+/* ===== DRAW FUNCTIONS ===== */
+function drawMap(){
+  for(let y=0; y<MAP_ROWS; y++){
+    for(let x=0; x<MAP_COLS; x++){
+     const tileId = map[y][x];
+const t = TILE_POS[tileId];
+if(!t) continue;
+
+ctx.drawImage(tileset, t.x, t.y, 32, 32, x*TILE-camera.x, y*TILE-camera.y, 32, 32);
+    }
+  }
+}
+
+function drawNPC(){
+  npcs.forEach(n=>{
+    if(n.done) return;
+
+    ctx.drawImage(
+      n.img,
+      0,0,32,32,
+      n.x*TILE-camera.x,
+      n.y*TILE-camera.y,
+      32,32
+    );
+
+    if(Math.abs(n.x-player.x)<=1 && Math.abs(n.y-player.y)<=1){
+      ctx.strokeStyle = "lime";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        n.x*TILE-camera.x,
+        n.y*TILE-camera.y,
+        TILE,
+        TILE
+      );
+
+      ctx.fillStyle = "white";
+      ctx.font = "12px monospace";
+      ctx.fillText(
+        "E",
+        n.x*TILE-camera.x + 10,
+        n.y*TILE-camera.y - 5
+      );
+    }
+  });
+}
+
+function drawPlayer(){
+  ctx.drawImage(playerImg, player.frame*32, player.dir*32, 32,32, player.x*TILE-camera.x, player.y*TILE-camera.y, 32,32);
+}
+
+
+/* ===== LOOP ===== */
+function loop(){
+  
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  if(gameStarted && !isPaused && assetsLoaded === totalAssets){
+
+  update();
+  drawMap();
+  drawPlayer();
+  drawNPC();
+
+}
+
+  requestAnimationFrame(loop);
+}
+
+
+updateBars(); 
+loop();       
+
+function saveGame(){
+  localStorage.setItem("kepalaSekolahSave", JSON.stringify({
+    env,
+    money,
+    happy,
+    day,
+    player: { x: player.x, y: player.y },
+    npcs: npcs.map(n => n.done)
+  }));
+}
+
+  
+</script>
+
+
